@@ -12,8 +12,9 @@ is better documented here:
 # Author: Erez Shinan (2017)
 # Email : erezshin@gmail.com
 
-from ..common import ParseError, UnexpectedToken, is_terminal
-from ..tree import Transformer_NoRecurse
+from ..exceptions import ParseError, UnexpectedToken
+from ..visitors import Transformer_InPlace, v_args
+from ..grammar import NonTerminal
 from .grammar_analysis import GrammarAnalyzer
 from .earley_common import Column, Item
 from .earley_forest import ForestToTreeVisitor, ForestSumVisitor, SymbolNode, TokenNode
@@ -88,7 +89,7 @@ class Parser:
                     if is_empty_item:
                         held_completions[item.rule.origin] = item.node
 
-                    originators = [originator for originator in item.start.items if originator.expect == item.s]
+                    originators = [originator for originator in item.start.items if originator.expect and originator.expect == item.s]
                     for originator in originators:
                         new_item = originator.advance()
                         new_item.node = make_symbol_node(new_item.s, originator.start, column)
@@ -147,8 +148,8 @@ class Parser:
                         next_set.add(new_item)
 
             if not next_set and not next_to_scan:
-                expect = {i.expect for i in to_scan}
-                raise UnexpectedToken(token, expect, stream, i)
+                expect = {i.expect.name for i in to_scan}
+                raise UnexpectedToken(token, expect)
 
             return next_set, next_to_scan
 

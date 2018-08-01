@@ -10,7 +10,7 @@ http://www.bramvandersanden.com/post/2014/06/shared-packed-parse-forest/
 import collections
 import functools
 from ..tree import Tree
-from ..common import ParseError
+from ..exceptions import ParseError
 from .earley_common import Column, Derivation
 
 

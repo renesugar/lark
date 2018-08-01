@@ -18,12 +18,9 @@ from io import (
 logging.basicConfig(level=logging.INFO)
 
 from lark.lark import Lark
-from lark.common import GrammarError, ParseError, UnexpectedToken
-from lark.lexer import LexError, UnexpectedInput
-from lark.tree import Tree, Transformer
 from lark.parsers.earley_forest import ForestToAmbiguousTreeVisitor
 from lark.parsers.earley import ApplyCallbacks
-from lark.exceptions import GrammarError, ParseError, UnexpectedToken, UnexpectedInput
+from lark.exceptions import GrammarError, ParseError, UnexpectedToken, UnexpectedInput, LexError
 from lark.tree import Tree
 from lark.visitors import Transformer
 

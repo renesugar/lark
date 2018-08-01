@@ -109,8 +109,9 @@ class AmbiguousExpander:
             return self.tree_class('_ambig', [self.node_builder(list(f[0])) for f in product(zip(*expand))])
         return self.node_builder(children)
 
-def maybe_create_ambiguous_expander(tree_class, expansion, filter_out):
-    to_expand = [i for i, sym in enumerate(expansion) if sym not in filter_out and _should_expand(sym)]
+def maybe_create_ambiguous_expander(tree_class, expansion, keep_all_tokens):
+    # keep_all_tokens or not (sym.is_term and sym.filter_out)
+    to_expand = [i for i, sym in enumerate(expansion) if (keep_all_tokens or not (sym.is_term and sym.filter_out)) and _should_expand(sym)]
 
     if to_expand:
         return partial(AmbiguousExpander, to_expand, tree_class)
@@ -149,7 +150,7 @@ class ParseTreeBuilder:
                 (expand_single_child and not rule.alias) and ExpandSingleChild,
                 maybe_create_child_filter(rule.expansion, keep_all_tokens, self.ambiguous),
                 self.propagate_positions and PropagatePositions,
-                ambiguity and maybe_create_ambiguous_expander(self.tree_class, rule.expansion, () if keep_all_tokens else filter_out),
+                ambiguity and maybe_create_ambiguous_expander(self.tree_class, rule.expansion, keep_all_tokens),
             ])
 
             yield rule, wrapper_chain

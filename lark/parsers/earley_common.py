@@ -14,13 +14,12 @@
 # Email : erezshin@gmail.com
 
 ## for recursive repr
-from ..common import is_terminal
 from ..tree import Tree
 
 class Derivation(Tree):
     def __init__(self, rule, children=None):
         Tree.__init__(self, 'drv', children if children is not None else [])
-        self.rule = rule
+        self.meta.rule = rule
 
     def __repr__(self, indent = 0):
         return 'Derivation(%s, %s, %s)' % (self.data, self.rule.origin, '...')
@@ -45,7 +44,7 @@ class Item(object):
         else:
             self.s = (rule, ptr)
             self.expect = rule.expansion[ptr]
-            self.is_terminal = is_terminal(self.expect)
+            self.is_terminal = self.expect.is_term
         self._hash = hash((self.s, self.start.i))
 
     def advance(self):

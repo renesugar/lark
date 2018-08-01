@@ -16,8 +16,8 @@ Earley's power in parsing any CFG.
 # Author: Erez Shinan (2017)
 # Email : erezshin@gmail.com
 
-import collections
-import itertools
+from collections import defaultdict
+from itertools import groupby
 
 from ..exceptions import ParseError, UnexpectedCharacters
 from ..lexer import Token
@@ -32,11 +32,10 @@ from .earley import ApplyCallbacks, Item, Column
 
 
 class Parser:
-    def __init__(self,  parser_conf, term_matcher, resolve_ambiguity=True, forest_sum_visitor = ForestSumVisitor, ignore=()):
+    def __init__(self,  parser_conf, term_matcher, resolve_ambiguity=True, forest_sum_visitor = ForestSumVisitor, ignore=(), complete_lex=False):
         analysis = GrammarAnalyzer(parser_conf)
         self.parser_conf = parser_conf
         self.ignore = [Terminal(t) for t in ignore]
-        self.predict_all = predict_all
         self.complete_lex = complete_lex
 
         self.FIRST = analysis.FIRST
@@ -116,7 +115,7 @@ class Parser:
                     if is_empty_item:
                         held_completions[item.rule.origin] = item.node
 
-                    originators = [originator for originator in item.start.items if originator.expect == item.s]
+                    originators = [originator for originator in item.start.items if originator.expect and originator.expect == item.s]
                     for originator in originators:
                         new_item = originator.advance()
                         new_item.node = make_symbol_node(new_item.s, originator.start, column)
@@ -162,8 +161,8 @@ class Parser:
             # 1) Collate all terminals that request the same regular expression.
             # This reduces pressure on regular expression performance when
             # many non-terminals can request the same token in a pass.
-            sort = sorted(to_scan, key=lambda item: item.expect)
-            expectations = {key: set(values) for key, values in itertools.groupby(sort, lambda item: item.expect)}
+            # sort = sorted(to_scan, key=lambda item: item.expect)
+            expectations = {key: set(values) for key, values in groupby(to_scan, lambda item: item.expect)}
 
             # 2) Loop the expectations and ask the lexer to match.
             # Since regexp is forward looking on the input stream, and we only
@@ -174,16 +173,56 @@ class Parser:
             for expect in expectations:
                 m = match(expect, stream, i)
                 if m:
-                    t = Token(item.expect.name, m.group(0), i, text_line, text_column)
-                    delayed_matches[m.end()].append(item.advance(t))
+                    t = Token(expect, m.group(0), i, text_line, text_column)
+                    delayed_matches[m.end()].extend( [ (item, column, t) for item in expectations[expect] ] )
 
-                    if self.complete_lex:
-                        s = m.group(0)
-                        for j in range(1, len(s)):
-                            m = match(item.expect, s[:-j])
-                            if m:
-                                t = Token(item.expect.name, m.group(0), i, text_line, text_column)
-                                delayed_matches[i+m.end()].append(item.advance(t))
+                    s = m.group(0)
+                    for j in range(1, len(s)):
+                        m = match(expect, s[:-j])
+                        if m:
+                            t = Token(expect, m.group(0), i, text_line, text_column)
+                            delayed_matches[i+m.end()].extend( [ (item, column, t) for item in expectations[expect] ] )
+
+                    # Remove any items that successfully matched in this pass from the to_scan buffer.
+                    # This ensures we don't carry over tokens that already matched, if we're ignoring below.
+                    to_scan -= expectations[expect]
+
+            # 3) Process any ignores. This is typically used for e.g. whitespace.
+            # We carry over any unmatched items from the to_scan buffer to be matched again after
+            # the ignore. This should allow us to use ignored symbols in non-terminals to implement
+            # e.g. mandatory spacing.
+            for x in self.ignore:
+                m = match(x, stream, i)
+                if m:
+                    # Carry over any items still in the scan buffer, to past the end of the ignored items.
+                    delayed_matches[m.end()].extend([(item, column, None) for item in to_scan ])
+
+                    # If we're ignoring up to the end of the file, # carry over the start symbol if it already completed.
+                    delayed_matches[m.end()].extend([(item, column, None) for item in column.items if item.is_complete and item.s == start_symbol])
+
+            next_set = Column(i + 1, self.FIRST)    # Ei+1
+            next_to_scan = set()
+
+            ## 4) Process Tokens from delayed_matches.
+            # This is the core of the Earley scanner. Create an SPPF node for each Token,
+            # and create the symbol node in the SPPF tree. Advance the item that completed,
+            # and add the resulting new item to either the Earley set (for processing by the
+            # completer/predictor) or the to_scan buffer for the next parse step.
+            for item, start, token in delayed_matches[i+1]:
+                if token is not None:
+                    new_item = item.advance()
+                    new_item.node = make_symbol_node(new_item.s, new_item.start, column)
+                    token_node = make_token_node(token, start, next_set)
+                    new_item.node.add_packed_node(new_item.s, item.rule, new_item.start, item.node, token_node)
+                else:
+                    new_item = item
+
+                if new_item.is_terminal:
+                    # add (B ::= Aai+1.B, h, y) to Q'
+                    next_to_scan.add(new_item)
+                else:
+                    # add (B ::= Aa+1.B, h, y) to Ei+1
+                    next_set.add(new_item)
 
             del delayed_matches[i+1]    # No longer needed, so unburden memory
 
@@ -191,6 +230,7 @@ class Parser:
                 raise UnexpectedCharacters(stream, i, text_line, text_column, {item.expect for item in to_scan}, set(to_scan))
 
             return next_set, next_to_scan
+
 
         # Main loop starts
         column0 = Column(0, self.FIRST)
