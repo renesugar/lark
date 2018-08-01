@@ -19,19 +19,25 @@ Earley's power in parsing any CFG.
 import collections
 import itertools
 
-from ..common import ParseError, is_terminal
-from ..lexer import Token, UnexpectedInput
+from ..exceptions import ParseError, UnexpectedCharacters
+from ..lexer import Token
 from ..tree import Tree
 from .grammar_analysis import GrammarAnalyzer
 from .earley import ApplyCallbacks
 from .earley_common import Column, Item
 from .earley_forest import ForestToTreeVisitor, ForestSumVisitor, SymbolNode, TokenNode
+from ..grammar import NonTerminal, Terminal
+
+from .earley import ApplyCallbacks, Item, Column
+
 
 class Parser:
     def __init__(self,  parser_conf, term_matcher, resolve_ambiguity=True, forest_sum_visitor = ForestSumVisitor, ignore=()):
         analysis = GrammarAnalyzer(parser_conf)
         self.parser_conf = parser_conf
-        self.ignore = list(ignore)
+        self.ignore = [Terminal(t) for t in ignore]
+        self.predict_all = predict_all
+        self.complete_lex = complete_lex
 
         self.FIRST = analysis.FIRST
         self.NULLABLE = analysis.NULLABLE
@@ -48,8 +54,9 @@ class Parser:
         self.term_matcher = term_matcher
 
     def parse(self, stream, start_symbol=None):
-        start_symbol = start_symbol or self.parser_conf.start
-        delayed_matches = collections.defaultdict(list)
+        # Define parser functions
+        start_symbol = NonTerminal(start_symbol or self.parser_conf.start)
+        delayed_matches = defaultdict(list)
         match = self.term_matcher
 
         # Held Completions (H in E.Scotts paper).
@@ -60,7 +67,7 @@ class Parser:
         token_cache = {}
 
         text_line = 1
-        text_column = 0
+        text_column = 1
 
         def make_symbol_node(s, start, end):
             label = (s, start.i, end.i)
@@ -167,62 +174,21 @@ class Parser:
             for expect in expectations:
                 m = match(expect, stream, i)
                 if m:
+                    t = Token(item.expect.name, m.group(0), i, text_line, text_column)
+                    delayed_matches[m.end()].append(item.advance(t))
 
-                    t = Token(expect, m.group(0), i, text_line, text_column)
-                    delayed_matches[m.end()].extend( [ (item, column, t) for item in expectations[expect] ] )
-
-                    s = m.group(0)
-                    for j in range(1, len(s)):
-                        m = match(expect, s[:-j])
-                        if m:
-                            t = Token(expect, m.group(0), i, text_line, text_column)
-                            delayed_matches[i+m.end()].extend( [ (item, column, t) for item in expectations[expect] ] )
-
-                    # Remove any items that successfully matched in this pass from the to_scan buffer.
-                    # This ensures we don't carry over tokens that already matched, if we're ignoring below.
-                    to_scan -= expectations[expect]
-
-            # 3) Process any ignores. This is typically used for e.g. whitespace.
-            # We carry over any unmatched items from the to_scan buffer to be matched again after
-            # the ignore. This should allow us to use ignored symbols in non-terminals to implement
-            # e.g. mandatory spacing.
-            for x in self.ignore:
-                m = match(x, stream, i)
-                if m:
-                    # Carry over any items still in the scan buffer, to past the end of the ignored items.
-                    delayed_matches[m.end()].extend([(item, column, None) for item in to_scan ])
-
-                    # If we're ignoring up to the end of the file, # carry over the start symbol if it already completed.
-                    delayed_matches[m.end()].extend([(item, column, None) for item in column.items if item.is_complete and item.s == start_symbol])
-
-            next_set = Column(i + 1, self.FIRST)    # Ei+1
-            next_to_scan = set()
-
-            ## 4) Process Tokens from delayed_matches.
-            # This is the core of the Earley scanner. Create an SPPF node for each Token,
-            # and create the symbol node in the SPPF tree. Advance the item that completed,
-            # and add the resulting new item to either the Earley set (for processing by the
-            # completer/predictor) or the to_scan buffer for the next parse step.
-            for item, start, token in delayed_matches[i+1]:
-                if token is not None:
-                    new_item = item.advance()
-                    new_item.node = make_symbol_node(new_item.s, new_item.start, column)
-                    token_node = make_token_node(token, start, next_set)
-                    new_item.node.add_packed_node(new_item.s, item.rule, new_item.start, item.node, token_node)
-                else:
-                    new_item = item
-
-                if new_item.is_terminal:
-                    # add (B ::= Aai+1.B, h, y) to Q'
-                    next_to_scan.add(new_item)
-                else:
-                    # add (B ::= Aa+1.B, h, y) to Ei+1
-                    next_set.add(new_item)
+                    if self.complete_lex:
+                        s = m.group(0)
+                        for j in range(1, len(s)):
+                            m = match(item.expect, s[:-j])
+                            if m:
+                                t = Token(item.expect.name, m.group(0), i, text_line, text_column)
+                                delayed_matches[i+m.end()].append(item.advance(t))
 
             del delayed_matches[i+1]    # No longer needed, so unburden memory
 
             if not next_set and not delayed_matches and not next_to_scan:
-                raise UnexpectedInput(stream, i, text_line, text_column, {item for item in to_scan})
+                raise UnexpectedCharacters(stream, i, text_line, text_column, {item.expect for item in to_scan}, set(to_scan))
 
             return next_set, next_to_scan
 
@@ -259,7 +225,7 @@ class Parser:
 
             if token == '\n':
                 text_line += 1
-                text_column = 0
+                text_column = 1
             else:
                 text_column += 1
 

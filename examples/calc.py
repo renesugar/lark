@@ -2,7 +2,8 @@
 # This example shows how to write a basic calculator with variables.
 #
 
-from lark import Lark, InlineTransformer
+from lark import Lark, Transformer, v_args
+
 
 try:
     input = raw_input   # For Python2 compatibility
@@ -34,7 +35,9 @@ calc_grammar = """
     %ignore WS_INLINE
 """
 
-class CalculateTree(InlineTransformer):
+
+@v_args(inline=True)    # Affects the signatures of the methods
+class CalculateTree(Transformer):
     from operator import add, sub, mul, truediv as div, neg
     number = float
 
@@ -49,9 +52,9 @@ class CalculateTree(InlineTransformer):
         return self.vars[name]
 
 
-
 calc_parser = Lark(calc_grammar, parser='lalr', transformer=CalculateTree())
 calc = calc_parser.parse
+
 
 def main():
     while True:
@@ -61,11 +64,12 @@ def main():
             break
         print(calc(s))
 
+
 def test():
     print(calc("a = 1+2"))
     print(calc("1+a*-3"))
 
+
 if __name__ == '__main__':
     # test()
     main()
-

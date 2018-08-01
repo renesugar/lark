@@ -8,7 +8,7 @@
 # the spaces (and tabs) after the newline.
 #
 
-from lark.lark import Lark
+from lark import Lark
 from lark.indenter import Indenter
 
 tree_grammar = r"""
@@ -18,11 +18,10 @@ tree_grammar = r"""
 
     %import common.CNAME -> NAME
     %import common.WS_INLINE
+    %declare _INDENT _DEDENT
     %ignore WS_INLINE
 
     _NL: /(\r?\n[\t ]*)+/
-    _INDENT: "<INDENT>"
-    _DEDENT: "<DEDENT>"
 """
 
 class TreeIndenter(Indenter):

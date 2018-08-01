@@ -1,23 +1,27 @@
 import re
+from functools import partial
+
 from .utils import get_regexp_width
-
 from .parsers.grammar_analysis import GrammarAnalyzer
-from .lexer import Lexer, ContextualLexer, Token
+from .lexer import TraditionalLexer, ContextualLexer, Lexer, Token
 
-from .common import is_terminal, GrammarError
-from .parsers import lalr_parser, earley, earley_forest, xearley, cyk
+from .exceptions import GrammarError
+from .parsers import lalr_parser, earley, xearley, resolve_ambig, cyk, earley_forest
 from .tree import Tree
 
 class WithLexer:
     def init_traditional_lexer(self, lexer_conf):
         self.lexer_conf = lexer_conf
-        self.lexer = Lexer(lexer_conf.tokens, ignore=lexer_conf.ignore, user_callbacks=lexer_conf.callbacks)
+        self.lexer = TraditionalLexer(lexer_conf.tokens, ignore=lexer_conf.ignore, user_callbacks=lexer_conf.callbacks)
 
     def init_contextual_lexer(self, lexer_conf, parser_conf):
         self.lexer_conf = lexer_conf
         states = {idx:list(t.keys()) for idx, t in self.parser._parse_table.states.items()}
         always_accept = lexer_conf.postlex.always_accept if lexer_conf.postlex else ()
-        self.lexer = ContextualLexer(lexer_conf.tokens, states, ignore=lexer_conf.ignore, always_accept=always_accept, user_callbacks=lexer_conf.callbacks)
+        self.lexer = ContextualLexer(lexer_conf.tokens, states,
+                                     ignore=lexer_conf.ignore,
+                                     always_accept=always_accept,
+                                     user_callbacks=lexer_conf.callbacks)
 
     def lex(self, text):
         stream = self.lexer.lex(text)
@@ -26,25 +30,27 @@ class WithLexer:
         else:
             return stream
 
+    def parse(self, text):
+        token_stream = self.lex(text)
+        sps = self.lexer.set_parser_state
+        return self.parser.parse(token_stream, *[sps] if sps is not NotImplemented else [])
 
-class LALR(WithLexer):
+class LALR_TraditionalLexer(WithLexer):
     def __init__(self, lexer_conf, parser_conf, options=None):
         self.parser = lalr_parser.Parser(parser_conf)
         self.init_traditional_lexer(lexer_conf)
-
-    def parse(self, text):
-        token_stream = self.lex(text)
-        return self.parser.parse(token_stream)
-
 
 class LALR_ContextualLexer(WithLexer):
     def __init__(self, lexer_conf, parser_conf, options=None):
         self.parser = lalr_parser.Parser(parser_conf)
         self.init_contextual_lexer(lexer_conf, parser_conf)
 
-    def parse(self, text):
-        token_stream = self.lex(text)
-        return self.parser.parse(token_stream, self.lexer.set_parser_state)
+class LALR_CustomLexer(WithLexer):
+    def __init__(self, lexer_cls, lexer_conf, parser_conf, options=None):
+        self.parser = lalr_parser.Parser(parser_conf)
+        self.lexer_conf = lexer_conf
+        self.lexer = lexer_cls(lexer_conf)
+
 
 def get_ambiguity_options(options):
     if not options or options.ambiguity == 'resolve':
@@ -64,28 +70,6 @@ def tokenize_text(text):
             col_start_pos = i + ch.rindex('\n')
         yield Token('CHAR', ch, line=line, column=i - col_start_pos)
 
-class Earley_NoLex:
-    def __init__(self, lexer_conf, parser_conf, options=None):
-        self._prepare_match(lexer_conf)
-
-        self.parser = earley.Parser(parser_conf, self.match, **get_ambiguity_options(options))
-
-
-    def match(self, term, text, index=0):
-        return self.regexps[term].match(text, index)
-
-    def _prepare_match(self, lexer_conf):
-        self.regexps = {}
-        for t in lexer_conf.tokens:
-            regexp = t.pattern.to_regexp()
-            width = get_regexp_width(regexp)
-            if width != (1,1):
-                raise GrammarError('Scanless parsing (lexer=None) requires all tokens to have a width of 1 (terminal %s: %s is %s)' % (t.name, regexp, width))
-            self.regexps[t.name] = re.compile(regexp)
-
-    def parse(self, text):
-        token_stream = tokenize_text(text)
-        return self.parser.parse(token_stream)
 
 class Earley(WithLexer):
     def __init__(self, lexer_conf, parser_conf, options=None):
@@ -94,15 +78,11 @@ class Earley(WithLexer):
         self.parser = earley.Parser(parser_conf, self.match, **get_ambiguity_options(options))
 
     def match(self, term, token):
-        return term == token.type
-
-    def parse(self, text):
-        tokens = self.lex(text)
-        return self.parser.parse(tokens)
+        return term.name == token.type
 
 
 class XEarley:
-    def __init__(self, lexer_conf, parser_conf, options=None):
+    def __init__(self, lexer_conf, parser_conf, options=None, **kw):
         self.token_by_name = {t.name:t for t in lexer_conf.tokens}
 
         self._prepare_match(lexer_conf)
@@ -110,7 +90,7 @@ class XEarley:
         self.parser = xearley.Parser(parser_conf, self.match, ignore=lexer_conf.ignore, **get_ambiguity_options(options))
 
     def match(self, term, text, index=0):
-        return self.regexps[term].match(text, index)
+        return self.regexps[term.name].match(text, index)
 
     def _prepare_match(self, lexer_conf):
         self.regexps = {}
@@ -128,6 +108,11 @@ class XEarley:
 
     def parse(self, text):
         return self.parser.parse(text)
+
+class XEarley_CompleteLex(XEarley):
+    def __init__(self, *args, **kw):
+        super(self).__init__(*args, complete_lex=True, **kw)
+
 
 
 class CYK(WithLexer):
@@ -169,18 +154,20 @@ def get_frontend(parser, lexer):
         if lexer is None:
             raise ValueError('The LALR parser requires use of a lexer')
         elif lexer == 'standard':
-            return LALR
+            return LALR_TraditionalLexer
         elif lexer == 'contextual':
             return LALR_ContextualLexer
+        elif issubclass(lexer, Lexer):
+            return partial(LALR_CustomLexer, lexer)
         else:
             raise ValueError('Unknown lexer: %s' % lexer)
     elif parser=='earley':
-        if lexer is None:
-            return Earley_NoLex
-        elif lexer=='standard':
+        if lexer=='standard':
             return Earley
         elif lexer=='dynamic':
             return XEarley
+        elif lexer=='dynamic_complete':
+            return XEarley_CompleteLex
         elif lexer=='contextual':
             raise ValueError('The Earley parser does not support the contextual parser')
         else:

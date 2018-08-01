@@ -41,7 +41,7 @@ class Parser:
 
     def parse(self, stream, start_symbol=None):
         # Define parser functions
-        start_symbol = start_symbol or self.parser_conf.start
+        start_symbol = NonTerminal(start_symbol or self.parser_conf.start)
         node_cache = {}
         token_cache = {}
 
@@ -205,9 +205,10 @@ class Parser:
         tree = ForestToTreeVisitor(solutions[0], self.forest_sum_visitor).go()
         return ApplyCallbacks(self.postprocess).transform(tree)
 
-class ApplyCallbacks(Transformer_NoRecurse):
+class ApplyCallbacks(Transformer_InPlace):
     def __init__(self, postprocess):
         self.postprocess = postprocess
 
-    def drv(self, tree):
-        return self.postprocess[tree.rule](tree.children)
+    @v_args(meta=True)
+    def drv(self, children, meta):
+        return self.postprocess[meta.rule](children)

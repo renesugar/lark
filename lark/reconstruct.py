@@ -1,15 +1,16 @@
 from collections import defaultdict
 
-from .tree import Tree, Transformer_NoRecurse
-from .common import is_terminal, ParserConf, PatternStr
+from .tree import Tree
+from .visitors import Transformer_InPlace
+from .common import ParserConf, PatternStr
 from .lexer import Token
 from .parsers import earley, resolve_ambig
-from .grammar import Rule
+from .grammar import Rule, Terminal, NonTerminal
 
 
 
 def is_discarded_terminal(t):
-    return is_terminal(t) and t.startswith('_')
+    return t.is_term and t.filter_out
 
 def is_iter_empty(i):
     try:
@@ -18,19 +19,21 @@ def is_iter_empty(i):
     except StopIteration:
         return True
 
-class WriteTokensTransformer(Transformer_NoRecurse):
+class WriteTokensTransformer(Transformer_InPlace):
     def __init__(self, tokens):
         self.tokens = tokens
 
-    def __default__(self, t):
-        if not isinstance(t, MatchTree):
-            return t
+    def __default__(self, data, children, meta):
+        #  if not isinstance(t, MatchTree):
+            #  return t
+        if not getattr(meta, 'match_tree', False):
+            return Tree(data, children)
 
-        iter_args = iter(t.children)
+        iter_args = iter(children)
         to_write = []
-        for sym in t.orig_expansion:
+        for sym in meta.orig_expansion:
             if is_discarded_terminal(sym):
-                t = self.tokens[sym]
+                t = self.tokens[sym.name]
                 assert isinstance(t.pattern, PatternStr)
                 to_write.append(t.pattern.value)
             else:
@@ -39,9 +42,9 @@ class WriteTokensTransformer(Transformer_NoRecurse):
                     to_write += x
                 else:
                     if isinstance(x, Token):
-                        assert x.type == sym, x
+                        assert Terminal(x.type) == sym, x
                     else:
-                        assert x.data == sym, (sym, x)
+                        assert NonTerminal(x.data) == sym, (sym, x)
                     to_write.append(x)
 
         assert is_iter_empty(iter_args)
@@ -58,49 +61,55 @@ class MakeMatchTree:
 
     def __call__(self, args):
         t = MatchTree(self.name, args)
-        t.orig_expansion = self.expansion
+        t.meta.match_tree = True
+        t.meta.orig_expansion = self.expansion
         return t
 
 class Reconstructor:
     def __init__(self, parser):
-        # Recreate the rules to assume a standard lexer
-        _tokens, rules, _grammar_extra = parser.grammar.compile(lexer='standard', start='whatever')
+        # XXX TODO calling compile twice returns different results!
+        tokens, rules, _grammar_extra = parser.grammar.compile()
 
-        expand1s = {r.origin for r in parser.rules if r.options and r.options.expand1}
+        self.write_tokens = WriteTokensTransformer({t.name:t for t in tokens})
+        self.rules = list(self._build_recons_rules(rules))
 
-        d = defaultdict(list)
+    def _build_recons_rules(self, rules):
+        expand1s = {r.origin for r in rules if r.options and r.options.expand1}
+
+        aliases = defaultdict(list)
         for r in rules:
-            # Rules can match their alias
             if r.alias:
-                d[r.alias].append(r.expansion)
-                d[r.origin].append([r.alias])
-            else:
-                d[r.origin].append(r.expansion)
+                aliases[r.origin].append( r.alias )
 
-            # Expanded rules can match their own terminal
-            for sym in r.expansion:
-                if sym in expand1s:
-                    d[sym].append([sym.upper()])
+        rule_names = {r.origin for r in rules}
+        nonterminals = {sym for sym in rule_names
+                       if sym.name.startswith('_') or sym in expand1s or sym in aliases }
 
-        reduced_rules = defaultdict(list)
-        for name, expansions in d.items():
-            for expansion in expansions:
-                reduced = [sym if sym.startswith('_') or sym in expand1s else sym.upper()
-                           for sym in expansion if not is_discarded_terminal(sym)]
+        for r in rules:
+            recons_exp = [sym if sym in nonterminals else Terminal(sym.name)
+                          for sym in r.expansion if not is_discarded_terminal(sym)]
 
-                reduced_rules[name, tuple(reduced)].append(expansion)
+            # Skip self-recursive constructs
+            if recons_exp == [r.origin]:
+                continue
 
-        self.rules = [Rule(name, list(reduced), MakeMatchTree(name, expansions[0]), None)
-                      for (name, reduced), expansions in reduced_rules.items()]
+            sym = NonTerminal(r.alias) if r.alias else r.origin
 
-        self.write_tokens = WriteTokensTransformer({t.name:t for t in _tokens})
+            yield Rule(sym, recons_exp, MakeMatchTree(sym.name, r.expansion))
+
+        for origin, rule_aliases in aliases.items():
+            for alias in rule_aliases:
+                yield Rule(origin, [Terminal(alias)], MakeMatchTree(origin.name, [NonTerminal(alias)]))
+            
+            yield Rule(origin, [Terminal(origin.name)], MakeMatchTree(origin.name, [origin]))
+        
 
 
     def _match(self, term, token):
         if isinstance(token, Tree):
-            return token.data.upper() == term
+            return Terminal(token.data) == term
         elif isinstance(token, Token):
-            return term == token.type
+            return term == Terminal(token.type)
         assert False
 
     def _reconstruct(self, tree):
