@@ -27,6 +27,7 @@ from .earley import ApplyCallbacks
 from .earley_common import Column, Item
 from .earley_forest import ForestToTreeVisitor, ForestSumVisitor, SymbolNode, TokenNode
 from ..grammar import NonTerminal, Terminal
+from ..utils import classify
 
 from .earley import ApplyCallbacks, Item, Column
 
@@ -173,15 +174,16 @@ class Parser:
             for expect in expectations:
                 m = match(expect, stream, i)
                 if m:
-                    t = Token(expect, m.group(0), i, text_line, text_column)
+                    t = Token(expect.name, m.group(0), i, text_line, text_column)
                     delayed_matches[m.end()].extend( [ (item, column, t) for item in expectations[expect] ] )
 
-                    s = m.group(0)
-                    for j in range(1, len(s)):
-                        m = match(expect, s[:-j])
-                        if m:
-                            t = Token(expect, m.group(0), i, text_line, text_column)
-                            delayed_matches[i+m.end()].extend( [ (item, column, t) for item in expectations[expect] ] )
+                    if self.complete_lex:
+                        s = m.group(0)
+                        for j in range(1, len(s)):
+                            m = match(expect, s[:-j])
+                            if m:
+                                t = Token(expect.name, m.group(0), i, text_line, text_column)
+                                delayed_matches[i+m.end()].extend( [ (item, column, t) for item in expectations[expect] ] )
 
                     # Remove any items that successfully matched in this pass from the to_scan buffer.
                     # This ensures we don't carry over tokens that already matched, if we're ignoring below.

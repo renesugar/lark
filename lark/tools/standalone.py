@@ -53,7 +53,7 @@ _larkdir = path.join(_dir, path.pardir)
 EXTRACT_STANDALONE_FILES = [
     'tools/standalone.py',
     'utils.py',
-    'common.py',
+    # 'common.py',
     'tree.py',
     'indenter.py',
     'lexer.py',
