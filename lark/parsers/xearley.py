@@ -162,8 +162,8 @@ class Parser:
             # 1) Collate all terminals that request the same regular expression.
             # This reduces pressure on regular expression performance when
             # many non-terminals can request the same token in a pass.
-            # sort = sorted(to_scan, key=lambda item: item.expect)
-            expectations = {key: set(values) for key, values in groupby(to_scan, lambda item: item.expect)}
+            sort = sorted(to_scan, key=lambda item: item.expect.name)
+            expectations = {key: set(values) for key, values in groupby(sort, lambda item: item.expect)}
 
             # 2) Loop the expectations and ask the lexer to match.
             # Since regexp is forward looking on the input stream, and we only

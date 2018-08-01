@@ -317,8 +317,8 @@ def _make_full_earley_test(LEXER):
                     ])
                 ])
 
-            # print res.pretty()
-            # print expected.pretty()
+            # print(tree.pretty())
+            # print(expected.pretty())
 
             self.assertEqual(tree, expected)
 
@@ -395,6 +395,7 @@ def _make_parser_test(LEXER, PARSER):
 
             r = g.parse('aaabaab')
             self.assertEqual( ''.join(x.data for x in r.children), 'aaabaa' )
+
             r = g.parse('aaabaaba')
             self.assertEqual( ''.join(x.data for x in r.children), 'aaabaaa' )
 
