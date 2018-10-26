@@ -29,11 +29,12 @@ from .earley_forest import ForestToTreeVisitor, ForestSumVisitor, SymbolNode
 
 
 class Parser:
-    def __init__(self,  parser_conf, term_matcher, resolve_ambiguity=True, forest_sum_visitor = ForestSumVisitor, ignore = (), complete_lex = False):
+    def __init__(self,  parser_conf, term_matcher, resolve_ambiguity=True, forest_sum_visitor = None, ignore = (), complete_lex = False, token_class = None):
         analysis = GrammarAnalyzer(parser_conf)
         self.parser_conf = parser_conf
         self.resolve_ambiguity = resolve_ambiguity
         self.forest_sum_visitor = forest_sum_visitor
+        self.token_class = token_class
         self.ignore = [Terminal(t) for t in ignore]
         self.complete_lex = complete_lex
 
@@ -271,4 +272,7 @@ class Parser:
 
         # ... otherwise, disambiguate and convert the SPPF to an AST, removing any ambiguities
         # according to the rules.
-        return ForestToTreeVisitor(solutions[0], self.forest_sum_visitor, self.callbacks).go()
+        optargs = {}
+        if self.token_class is not None:         optargs['token_class'] = self.token_class
+        if self.forest_sum_visitor is not None:  optargs['forest_sum_visitor'] = self.forest_sum_visitor
+        return ForestToTreeVisitor(solutions[0], self.callbacks, **optargs).go()

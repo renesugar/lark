@@ -111,8 +111,9 @@ class ForestVisitor(object):
 
     Use this as a base when you need to walk the forest.
     """
-    def __init__(self, root):
+    def __init__(self, root, token_class = Str):
         self.root = root
+        self.token_class = token_class
         self.result = None
 
     def visit_token_node(self, node): pass
@@ -135,6 +136,7 @@ class ForestVisitor(object):
 
         # It is much faster to cache these as locals since they are called
         # many times in large parses.
+        tc = getattr(self, 'token_class')
         vpno = getattr(self, 'visit_packed_node_out')
         vpni = getattr(self, 'visit_packed_node_in')
         vsno = getattr(self, 'visit_symbol_node_out')
@@ -160,7 +162,7 @@ class ForestVisitor(object):
                 input_stack.append(next_node)
                 continue
 
-            if isinstance(current, Str):
+            if isinstance(current, tc):
                 vtn(current)
                 input_stack.pop()
                 continue
@@ -260,8 +262,8 @@ class ForestToTreeVisitor(ForestVisitor):
     implementation should be another ForestVisitor which sorts the children
     according to some priority mechanism.
     """
-    def __init__(self, root, forest_sum_visitor = ForestSumVisitor, callbacks = None):
-        super(ForestToTreeVisitor, self).__init__(root)
+    def __init__(self, root, callbacks = None, forest_sum_visitor = ForestSumVisitor, **kwargs):
+        super(ForestToTreeVisitor, self).__init__(root, **kwargs)
         self.forest_sum_visitor = forest_sum_visitor
         self.output_stack = deque()
         self.callbacks = callbacks
