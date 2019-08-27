@@ -63,7 +63,7 @@ class PatternRE(Pattern):
     _width = None
     def _get_width(self):
         if self._width is None:
-            self._width = get_regexp_width(self.to_regexp())
+            self._width = [int(w) for w in get_regexp_width(self.to_regexp())]
         return self._width
 
     @property
