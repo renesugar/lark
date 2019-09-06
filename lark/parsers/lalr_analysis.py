@@ -12,7 +12,7 @@ from collections import defaultdict, deque
 from ..utils import classify, classify_bool, bfs, fzset, Serialize, Enumerator
 from ..exceptions import GrammarError
 
-from .grammar_analysis import GrammarAnalyzer, Terminal, LR0ItemSet
+from .grammar_analysis import GrammarAnalyzer, Terminal, LR0ItemSet, RulePtrSet
 from ..grammar import Rule
 
 ###{standalone
@@ -90,48 +90,41 @@ class IntParseTable(ParseTable):
 # X: nodes
 # R: relation (function mapping node -> list of nodes that satisfy the relation)
 # G: set valued function
-def digraph(X, R, G):
+def digraph(nodes, R, G):
     F = {}
-    S = []
-    N = {}
-    for x in X:
-        N[x] = 0
-    for x in X:
-        # this is always true for the first iteration, but N[x] may be updated in traverse below
-        if N[x] == 0:
-            traverse(x, S, N, X, R, G, F)
-    return F
+    stack = []
+    weights = {node:0 for node in nodes}
 
-# x: single node
-# S: stack
-# N: weights
-# X: nodes
-# R: relation (see above)
-# G: set valued function
-# F: set valued function we are computing (map of input -> output)
-def traverse(x, S, N, X, R, G, F):
-    S.append(x)
-    d = len(S)
-    N[x] = d
-    F[x] = G[x]
-    for y in R[x]:
-        if N[y] == 0:
-            traverse(y, S, N, X, R, G, F)
-        n_x = N[x]
-        assert(n_x > 0)
-        n_y = N[y]
-        assert(n_y != 0)
-        if (n_y > 0) and (n_y < n_x):
-            N[x] = n_y
-        F[x].update(F[y])
-    if N[x] == d:
-        f_x = F[x]
-        while True:
-            z = S.pop()
-            N[z] = -1
-            F[z] = f_x
-            if z == x:
-                break
+    # G: set valued function
+    # F: set valued function we are computing (map of input -> output)
+    def traverse(node):
+        stack.append(node)
+        weights[node] = len(stack)
+        F[node] = G[node]
+        for r in R[node]:
+            if weights[r] == 0:
+                traverse(r)
+            n_x = weights[node]
+            n_y = weights[r]
+            assert(n_x > 0)
+            assert(n_y != 0)
+            if 0 < n_y < n_x:
+                weights[node] = n_y
+            F[node].update(F[r])
+
+        if weights[node] == len(stack):
+            f_x = F[node]
+            while True:
+                top_node = stack.pop()
+                weights[top_node] = -1
+                F[top_node] = f_x
+                if top_node == node:
+                    break
+
+    for x in nodes:
+        if weights[x] == 0:
+            traverse(x)
+    return F
 
 
 class LALR_Analyzer(GrammarAnalyzer):
@@ -141,100 +134,73 @@ class LALR_Analyzer(GrammarAnalyzer):
         self.directly_reads = defaultdict(set)
         self.reads = defaultdict(set)
         self.includes = defaultdict(set)
-        self.lookback = defaultdict(set)
 
 
     def compute_lr0_states(self):
-        self.lr0_states = set()
-        # map of kernels to LR0ItemSets
+        """Generate a graph of all reachable LR0ItemSets, connected through transitions
+        
+        Returns the list of items (vertices of the graph)
+        """
         cache = {}
 
         def step(state):
-            _, unsat = classify_bool(state.closure, lambda rp: rp.is_satisfied)
-
-            d = classify(unsat, lambda rp: rp.next)
+            d = classify(state.closure.only_unsatisfied(), lambda rp: rp.next)
             for sym, rps in d.items():
-                kernel = fzset({rp.advance(sym) for rp in rps})
-                new_state = cache.get(kernel, None)
-                if new_state is None:
+                kernel = RulePtrSet({rp.advance(sym) for rp in rps})
+                if kernel not in cache:
                     closure = set(kernel)
-                    for rp in kernel:
-                        if not rp.is_satisfied and not rp.next.is_term:
-                            closure |= self.expand_rule(rp.next, self.lr0_rules_by_origin)
-                    new_state = LR0ItemSet(kernel, closure)
-                    cache[kernel] = new_state
+                    for s in kernel.get_next_rules():
+                        closure |= self.expanded_rules[s]
+                    cache[kernel] = LR0ItemSet(kernel, closure)
 
+                new_state = cache[kernel]
                 state.transitions[sym] = new_state
                 yield new_state
 
-            self.lr0_states.add(state)
-
-        for _ in bfs(self.lr0_start_states.values(), step):
-            pass
+        return list(bfs(self.lr0_start_states.values(), step))
 
     def compute_reads_relations(self):
-        # handle start state
+
         for root in self.lr0_start_states.values():
             assert(len(root.kernel) == 1)
             for rp in root.kernel:
                 assert(rp.index == 0)
                 self.directly_reads[(root, rp.next)] = set([ Terminal('$END') ])
 
-        for state in self.lr0_states:
-            seen = set()
-            for rp in state.closure:
-                if rp.is_satisfied:
-                    continue
-                s = rp.next
-                # if s is a not a nonterminal
-                if s not in self.lr0_rules_by_origin:
-                    continue
-                if s in seen:
-                    continue
-                seen.add(s)
-                nt = (state, s)
-                self.nonterminal_transitions.append(nt)
-                dr = self.directly_reads[nt]
-                r = self.reads[nt]
-                next_state = state.transitions[s]
-                for rp2 in next_state.closure:
-                    if rp2.is_satisfied:
-                        continue
-                    s2 = rp2.next
-                    # if s2 is a terminal
-                    if not s2 in self.lr0_rules_by_origin:
-                        dr.add(s2)
-                    if s2 in self.NULLABLE:
-                        r.add((next_state, s2))
+        for nt in self.nonterminal_transitions:
+            state, s = nt
+            next_state = state.transitions[s]
+            dr = self.directly_reads[nt]
+            r = self.reads[nt]
+            for s2 in next_state.closure.get_next():
+                if s2.is_term:
+                    dr.add(s2)
+                elif s2 in self.NULLABLE:
+                    r.add((next_state, s2))
 
     def compute_includes_lookback(self):
+        self.lookback = defaultdict(set)
         for nt in self.nonterminal_transitions:
-            state, nonterminal = nt
-            includes = []
+            state, s = nt
             lookback = self.lookback[nt]
-            for rp in state.closure:
-                if rp.rule.origin != nonterminal:
-                    continue
+            for rp in state.closure.by_origin(s):
+
                 # traverse the states for rp(.rule)
                 state2 = state
                 for i in range(rp.index, len(rp.rule.expansion)):
                     s = rp.rule.expansion[i]
                     nt2 = (state2, s)
+                    if nt2 in self.reads:
+                        if fzset(rp.rule.expansion[i+1:]) <= self.NULLABLE:
+                            self.includes[nt2].add(nt)
+
                     state2 = state2.transitions[s]
-                    if nt2 not in self.reads:
-                        continue
-                    for j in range(i + 1, len(rp.rule.expansion)):
-                        if not rp.rule.expansion[j] in self.NULLABLE:
-                            break
-                    else:
-                        includes.append(nt2)
+
                 # state2 is at the final state for rp.rule
                 if rp.index == 0:
-                    for rp2 in state2.closure:
-                        if (rp2.rule == rp.rule) and rp2.is_satisfied:
-                            lookback.add((state2, rp2.rule))
-            for nt2 in includes:
-                self.includes[nt2].add(nt)
+                    for rp2 in state2.closure.by_rule(rp.rule).only_satisfied():
+                        lookback.add((state2, rp2.rule))
+
 
     def compute_lookaheads(self):
         read_sets = digraph(self.nonterminal_transitions, self.reads, self.directly_reads)
@@ -248,9 +214,7 @@ class LALR_Analyzer(GrammarAnalyzer):
     def compute_lalr1_states(self):
         m = {}
         for state in self.lr0_states:
-            actions = {}
-            for la, next_state in state.transitions.items():
-                actions[la] = (Shift, next_state.closure)
+            actions = {la:(Shift, next_state.closure) for la, next_state in state.transitions.items()}
             for la, rules in state.lookaheads.items():
                 if len(rules) > 1:
                     raise GrammarError('Collision in %s: %s' % (la, ', '.join([ str(r) for r in rules ])))
@@ -259,7 +223,8 @@ class LALR_Analyzer(GrammarAnalyzer):
                         logging.warning('Shift/reduce conflict for terminal %s: (resolving as shift)', la.name)
                         logging.warning(' * %s', list(rules)[0])
                 else:
-                    actions[la] = (Reduce, list(rules)[0])
+                    r ,= rules
+                    actions[la] = (Reduce, r)
             m[state] = { k.name: v for k, v in actions.items() }
 
         self.states = { k.closure: v for k, v in m.items() }
@@ -281,7 +246,12 @@ class LALR_Analyzer(GrammarAnalyzer):
             self.parse_table = IntParseTable.from_ParseTable(self._parse_table)
 
     def compute_lalr(self):
-        self.compute_lr0_states()
+        self.lr0_states = self.compute_lr0_states()
+
+        # Collect set of all reachable pairs of (state, s), where 's' is a non-terminal expected by state
+        self.nonterminal_transitions = { (state, s) for state in self.lr0_states
+                                                    for s in state.closure.get_next_rules() }
+
         self.compute_reads_relations()
         self.compute_includes_lookback()
         self.compute_lookaheads()
