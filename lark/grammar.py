@@ -3,6 +3,8 @@ from .utils import Serialize
 ###{standalone
 
 class Symbol(Serialize):
+    __slots__ = ('name',)
+
     is_term = NotImplemented
 
     def __init__(self, name):
