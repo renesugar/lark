@@ -2,7 +2,7 @@
 """
 # Author: Erez Shinan (2017)
 # Email : erezshin@gmail.com
-from ..exceptions import UnexpectedToken
+from ..exceptions import UnexpectedToken, LarkError
 from ..lexer import Token
 from ..utils import Enumerator, Serialize
 
@@ -81,27 +81,31 @@ class _Parser:
             value_stack.append(value)
 
         # Main LALR-parser loop
-        for token in stream:
-            while True:
-                action, arg = get_action(token)
-                assert arg != end_state
+        try:
+            for token in stream:
+                while True:
+                    action, arg = get_action(token)
+                    assert arg != end_state
 
-                if action is Shift:
-                    state_stack.append(arg)
-                    value_stack.append(token)
-                    if set_state: set_state(arg)
-                    break # next token
+                    if action is Shift:
+                        state_stack.append(arg)
+                        value_stack.append(token)
+                        if set_state: set_state(arg)
+                        break # next token
+                    else:
+                        reduce(arg)
+
+            token = Token.new_borrow_pos('$END', '', token) if token else Token('$END', '', 0, 1, 1)
+            while True:
+                _action, arg = get_action(token)
+                if _action is Shift:
+                    assert arg == end_state
+                    val ,= value_stack
+                    return val
                 else:
                     reduce(arg)
-
-        token = Token.new_borrow_pos('$END', '', token) if token else Token('$END', '', 0, 1, 1)
-        while True:
-            _action, arg = get_action(token)
-            if _action is Shift:
-                assert arg == end_state
-                val ,= value_stack
-                return val
-            else:
-                reduce(arg)
+        except LarkError as e:
+            e.value_stack = value_stack
+            raise e
 
 ###}
