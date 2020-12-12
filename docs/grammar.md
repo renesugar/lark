@@ -1,13 +1,5 @@
 # Grammar Reference
 
-Table of contents:
-
-1. [Definitions](#defs)
-1. [Terminals](#terms)
-1. [Rules](#rules)
-1. [Directives](#dirs)
-
-<a name="defs"></a>
 ## Definitions
 
 A **grammar** is a list of rules and terminals, that together define a language.
@@ -20,7 +12,7 @@ Each rule is a list of terminals and rules, whose location and nesting define th
 
 A **parsing algorithm** is an algorithm that takes a grammar definition and a sequence of symbols (members of the alphabet), and matches the entirety of the sequence by searching for a structure that is allowed by the grammar.
 
-## General Syntax and notes
+### General Syntax and notes
 
 Grammars in Lark are based on [EBNF](https://en.wikipedia.org/wiki/Extended_Backus–Naur_form) syntax, with several enhancements.
 
@@ -58,7 +50,6 @@ Lark begins the parse with the rule 'start', unless specified otherwise in the o
 Names of rules are always in lowercase, while names of terminals are always in uppercase. This distinction has practical effects, for the shape of the generated parse-tree, and the automatic construction of the lexer (aka tokenizer, or scanner).
 
 
-<a name="terms"></a>
 ## Terminals
 
 Terminals are used to match text into symbols. They can be defined as a combination of literals and other terminals.
@@ -83,11 +74,53 @@ Terminals also support grammar operators, such as `|`, `+`, `*` and `?`.
 
 Terminals are a linear construct, and therefore may not contain themselves (recursion isn't allowed).
 
+### Templates
+
+Templates are expanded when preprocessing the grammar.
+
+Definition syntax:
+
+```ebnf
+  my_template{param1, param2, ...}: <EBNF EXPRESSION>
+```
+
+Use syntax:
+
+```ebnf
+some_rule: my_template{arg1, arg2, ...}
+```
+
+Example:
+```ebnf
+_separated{x, sep}: x (sep x)*  // Define a sequence of 'x sep x sep x ...'
+
+num_list: "[" _separated{NUMBER, ","} "]"   // Will match "[1, 2, 3]" etc.
+```
+
 ### Priority
 
 Terminals can be assigned priority only when using a lexer (future versions may support Earley's dynamic lexing).
 
 Priority can be either positive or negative. If not specified for a terminal, it defaults to 1.
+
+Highest priority terminals are always matched first.
+
+### Regexp Flags
+
+You can use flags on regexps and strings. For example:
+
+```perl
+SELECT: "select"i     //# Will ignore case, and match SELECT or Select, etc.
+MULTILINE_TEXT: /.+/s
+SIGNED_INTEGER: /
+    [+-]?  # the sign
+    (0|[1-9][0-9]*)  # the digits
+ /x
+```
+
+Supported flags are one of: `imslux`. See Python's regex documentation for more details on each one.
+
+Regexps/strings of different flags can only be concatenated in Python 3.6+
 
 #### Notes for when using a lexer:
 
@@ -154,7 +187,6 @@ _ambig
 ```
 
 
-<a name="rules"></a>
 ## Rules
 
 **Syntax:**
@@ -176,7 +208,7 @@ Each item is one of:
 * `TERMINAL`
 * `"string literal"` or `/regexp literal/`
 * `(item item ..)` - Group items
-* `[item item ..]` - Maybe. Same as `(item item ..)?`, but generates `None` if there is no match
+* `[item item ..]` - Maybe. Same as `(item item ..)?`, but when `maybe_placeholders=True`, generates `None` if there is no match.
 * `item?` - Zero or one instances of item ("maybe")
 * `item*` - Zero or more instances of item
 * `item+` - One or more instances of item
@@ -223,7 +255,7 @@ COMMENT: "#" /[^\n]/*
 ```
 ### %import
 
-Allows to import terminals and rules from lark grammars.
+Allows one to import terminals and rules from lark grammars.
 
 When importing rules, all their dependencies will be imported into a namespace, to avoid collisions. It's not possible to override their dependencies (e.g. like you would when inheriting a class).
 
@@ -236,11 +268,11 @@ When importing rules, all their dependencies will be imported into a namespace, 
 %import <module> (<TERM1>, <TERM2>, <rule1>, <rule2>)
 ```
 
-If the module path is absolute, Lark will attempt to load it from the built-in directory (currently, only `common.lark` is available).
+If the module path is absolute, Lark will attempt to load it from the built-in directory (which currently contains `common.lark`, `python.lark`, and `unicode.lark`).
 
 If the module path is relative, such as `.path.to.file`, Lark will attempt to load it from the current working directory. Grammars must have the `.lark` extension.
 
-The rule or terminal can be imported under an other name with the `->` syntax.
+The rule or terminal can be imported under another name with the `->` syntax.
 
 **Example:**
 ```perl
@@ -256,3 +288,4 @@ Note that `%ignore` directives cannot be imported. Imported rules will abide by 
 ### %declare
 
 Declare a terminal without defining it. Useful for plugins.
+

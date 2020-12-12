@@ -1,7 +1,6 @@
-# Lark Tutorial - JSON parser
+# JSON parser - Tutorial
 
 Lark is a parser - a program that accepts a grammar and text, and produces a structured tree that represents that text.
-
 In this tutorial we will write a JSON parser in Lark, and explore Lark's various features in the process.
 
 It has 5 parts.
@@ -79,8 +78,8 @@ By the way, if you're curious what these terminals signify, they are roughly equ
 
 Lark will accept this, if you really want to complicate your life :)
 
-You can find the original definitions in [common.lark](/lark/grammars/common.lark).
-They're don't strictly adhere to [json.org](https://json.org/) - but our purpose here is to accept json, not validate it.
+You can find the original definitions in [common.lark](https://github.com/lark-parser/lark/blob/master/lark/grammars/common.lark).
+They don't strictly adhere to [json.org](https://json.org/) - but our purpose here is to accept json, not validate it.
 
 Notice that terminals are written in UPPER-CASE, while rules are written in lower-case.
 I'll touch more on the differences between rules and terminals later.
@@ -443,7 +442,7 @@ Once again, shout-out to PyPy for being so effective.
 
 This is the end of the tutorial. I hoped you liked it and learned a little about Lark.
 
-To see what else you can do with Lark, check out the [examples](/examples).
+To see what else you can do with Lark, check out the [examples](examples).
 
 For questions or any other subject, feel free to email me at erezshin at gmail dot com.
 

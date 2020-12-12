@@ -1,4 +1,4 @@
-"""This module implements an scanerless Earley parser.
+"""This module implements an Earley parser.
 
 The core Earley algorithm used here is based on Elizabeth Scott's implementation, here:
     https://www.sciencedirect.com/science/article/pii/S1571066108001497
@@ -6,26 +6,27 @@ The core Earley algorithm used here is based on Elizabeth Scott's implementation
 That is probably the best reference for understanding the algorithm here.
 
 The Earley parser outputs an SPPF-tree as per that document. The SPPF tree format
-is better documented here:
-    http://www.bramvandersanden.com/post/2014/06/shared-packed-parse-forest/
+is explained here: https://lark-parser.readthedocs.io/en/latest/_static/sppf/sppf.html
 """
 
-import logging
 from collections import deque
 
+from ..tree import Tree
 from ..visitors import Transformer_InPlace, v_args
 from ..exceptions import UnexpectedEOF, UnexpectedToken
+from ..utils import logger
 from .grammar_analysis import GrammarAnalyzer
 from ..grammar import NonTerminal
 from .earley_common import Item, TransitiveItem
-from .earley_forest import ForestToTreeVisitor, ForestSumVisitor, SymbolNode, ForestToAmbiguousTreeVisitor
+from .earley_forest import ForestSumVisitor, SymbolNode, ForestToParseTree
 
 class Parser:
-    def __init__(self, parser_conf, term_matcher, resolve_ambiguity=True, debug=False):
+    def __init__(self, parser_conf, term_matcher, resolve_ambiguity=True, debug=False, tree_class=Tree):
         analysis = GrammarAnalyzer(parser_conf)
         self.parser_conf = parser_conf
         self.resolve_ambiguity = resolve_ambiguity
         self.debug = debug
+        self.tree_class = tree_class
 
         self.FIRST = analysis.FIRST
         self.NULLABLE = analysis.NULLABLE
@@ -145,7 +146,7 @@ class Parser:
                         column.add(new_item)
                         items.append(new_item)
 
-    def _parse(self, stream, columns, to_scan, start_symbol=None):
+    def _parse(self, lexer, columns, to_scan, start_symbol=None):
         def is_quasi_complete(item):
             if item.is_complete:
                 return True
@@ -244,7 +245,7 @@ class Parser:
 
             if not next_set and not next_to_scan:
                 expect = {i.expect.name for i in to_scan}
-                raise UnexpectedToken(token, expect, considered_rules = set(to_scan))
+                raise UnexpectedToken(token, expect, considered_rules=set(to_scan), state=frozenset(i.s for i in to_scan))
 
             return next_to_scan
 
@@ -260,12 +261,16 @@ class Parser:
         # Completions will be added to the SPPF tree, and predictions will be recursively
         # processed down to terminals/empty nodes to be added to the scanner for the next
         # step.
+        expects = {i.expect for i in to_scan}
         i = 0
-        for token in stream:
+        for token in lexer.lex(expects):
             self.predict_and_complete(i, to_scan, columns, transitives)
 
             to_scan = scan(i, token, to_scan)
             i += 1
+
+            expects.clear()
+            expects |= {i.expect for i in to_scan}
 
         self.predict_and_complete(i, to_scan, columns, transitives)
 
@@ -273,7 +278,7 @@ class Parser:
         assert i == len(columns)-1
         return to_scan
 
-    def parse(self, stream, start):
+    def parse(self, lexer, start):
         assert start, start
         start_symbol = NonTerminal(start)
 
@@ -290,34 +295,36 @@ class Parser:
             else:
                 columns[0].add(item)
 
-        to_scan = self._parse(stream, columns, to_scan, start_symbol)
+        to_scan = self._parse(lexer, columns, to_scan, start_symbol)
 
         # If the parse was successful, the start
         # symbol should have been completed in the last step of the Earley cycle, and will be in
         # this column. Find the item for the start_symbol, which is the root of the SPPF tree.
         solutions = [n.node for n in columns[-1] if n.is_complete and n.node is not None and n.s == start_symbol and n.start == 0]
+        if not solutions:
+            expected_terminals = [t.expect.name for t in to_scan]
+            raise UnexpectedEOF(expected_terminals, state=frozenset(i.s for i in to_scan))
+
         if self.debug:
             from .earley_forest import ForestToPyDotVisitor
             try:
                 debug_walker = ForestToPyDotVisitor()
             except ImportError:
-                logging.warning("Cannot find dependency 'pydot', will not generate sppf debug image")
+                logger.warning("Cannot find dependency 'pydot', will not generate sppf debug image")
             else:
                 debug_walker.visit(solutions[0], "sppf.png")
 
 
-        if not solutions:
-            expected_tokens = [t.expect for t in to_scan]
-            raise UnexpectedEOF(expected_tokens)
-        elif len(solutions) > 1:
+        if len(solutions) > 1:
             assert False, 'Earley should not generate multiple start symbol items!'
 
-        # Perform our SPPF -> AST conversion using the right ForestVisitor.
-        forest_tree_visitor_cls = ForestToTreeVisitor if self.resolve_ambiguity else ForestToAmbiguousTreeVisitor
-        forest_tree_visitor = forest_tree_visitor_cls(self.callbacks, self.forest_sum_visitor and self.forest_sum_visitor())
+        if self.tree_class is not None:
+            # Perform our SPPF -> AST conversion
+            transformer = ForestToParseTree(self.tree_class, self.callbacks, self.forest_sum_visitor and self.forest_sum_visitor(), self.resolve_ambiguity)
+            return transformer.transform(solutions[0])
 
-        return forest_tree_visitor.visit(solutions[0])
-
+        # return the root of the SPPF
+        return solutions[0]
 
 class ApplyCallbacks(Transformer_InPlace):
     def __init__(self, postprocess):

@@ -16,6 +16,7 @@ Earley's power in parsing any CFG.
 
 from collections import defaultdict
 
+from ..tree import Tree
 from ..exceptions import UnexpectedCharacters
 from ..lexer import Token
 from ..grammar import Terminal
@@ -24,8 +25,8 @@ from .earley_forest import SymbolNode
 
 
 class Parser(BaseParser):
-    def __init__(self,  parser_conf, term_matcher, resolve_ambiguity=True, ignore = (), complete_lex = False, debug=False):
-        BaseParser.__init__(self, parser_conf, term_matcher, resolve_ambiguity, debug)
+    def __init__(self,  parser_conf, term_matcher, resolve_ambiguity=True, ignore = (), complete_lex = False, debug=False, tree_class=Tree):
+        BaseParser.__init__(self, parser_conf, term_matcher, resolve_ambiguity, debug, tree_class)
         self.ignore = [Terminal(t) for t in ignore]
         self.complete_lex = complete_lex
 
@@ -62,9 +63,10 @@ class Parser(BaseParser):
                                 t = Token(item.expect.name, m.group(0), i, text_line, text_column)
                                 delayed_matches[i+m.end()].append( (item, i, t) )
 
-                    # Remove any items that successfully matched in this pass from the to_scan buffer.
-                    # This ensures we don't carry over tokens that already matched, if we're ignoring below.
-                    to_scan.remove(item)
+                    # XXX The following 3 lines were commented out for causing a bug. See issue #768
+                    # # Remove any items that successfully matched in this pass from the to_scan buffer.
+                    # # This ensures we don't carry over tokens that already matched, if we're ignoring below.
+                    # to_scan.remove(item)
 
             # 3) Process any ignores. This is typically used for e.g. whitespace.
             # We carry over any unmatched items from the to_scan buffer to be matched again after
@@ -112,7 +114,8 @@ class Parser(BaseParser):
             del delayed_matches[i+1]    # No longer needed, so unburden memory
 
             if not next_set and not delayed_matches and not next_to_scan:
-                raise UnexpectedCharacters(stream, i, text_line, text_column, {item.expect.name for item in to_scan}, set(to_scan))
+                raise UnexpectedCharacters(stream, i, text_line, text_column, {item.expect.name for item in to_scan},
+                                           set(to_scan), state=frozenset(i.s for i in to_scan))
 
             return next_to_scan
 

@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
-
+from types import ModuleType
 from typing import (
-    TypeVar, Type, Tuple, List, Dict, Iterator, Collection, Callable, Optional,
+    TypeVar, Type, Tuple, List, Dict, Iterator, Collection, Callable, Optional, FrozenSet, Any,
     Pattern as REPattern,
 )
 from abc import abstractmethod, ABC
@@ -12,6 +12,7 @@ _T = TypeVar('_T')
 class Pattern(ABC):
     value: str
     flags: Collection[str]
+    raw: str
 
     def __init__(self, value: str, flags: Collection[str] = ...):
         ...
@@ -73,23 +74,28 @@ class TerminalDef:
 
     def __init__(self, name: str, pattern: Pattern, priority: int = ...):
         ...
+    
+    def user_repr(self) -> str: ...
 
 
 class Token(str):
     type: str
     pos_in_stream: int
-    value: str
+    value: Any
     line: int
     column: int
     end_line: int
     end_column: int
     end_pos: int
 
-    def update(self, type_: Optional[str] = None, value: Optional[str] = None) -> Token:
+    def __init__(self, type_: str, value: Any, pos_in_stream: int = None, line: int = None, column: int = None, end_line: int = None, end_column: int = None, end_pos: int = None):
+        ...
+
+    def update(self, type_: Optional[str] = None, value: Optional[Any] = None) -> Token:
         ...
 
     @classmethod
-    def new_borrow_pos(cls: Type[_T], type_: str, value: str, borrow_t: Token) -> _T:
+    def new_borrow_pos(cls: Type[_T], type_: str, value: Any, borrow_t: Token) -> _T:
         ...
 
 
@@ -100,20 +106,30 @@ class Lexer(ABC):
     lex: Callable[..., Iterator[Token]]
 
 
+class LexerConf:
+     tokens: Collection[TerminalDef]
+     re_module: ModuleType
+     ignore: Collection[str] = ()
+     postlex: Any =None
+     callbacks: Optional[Dict[str, _Callback]] = None
+     g_regex_flags: int = 0
+     skip_validation: bool = False
+     use_bytes: bool = False
+
+
+
 class TraditionalLexer(Lexer):
     terminals: Collection[TerminalDef]
-    ignore_types: List[str]
-    newline_types: List[str]
+    ignore_types: FrozenSet[str]
+    newline_types: FrozenSet[str]
     user_callbacks: Dict[str, _Callback]
     callback: Dict[str, _Callback]
     mres: List[Tuple[REPattern, Dict[int, str]]]
+    re: ModuleType
 
     def __init__(
         self,
-        terminals: Collection[TerminalDef],
-        ignore: Collection[str] = ...,
-        user_callbacks: Dict[str, _Callback] = ...,
-        g_regex_flags: int = ...
+        conf: LexerConf
     ):
         ...
 
@@ -126,6 +142,8 @@ class TraditionalLexer(Lexer):
     def lex(self, stream: str) -> Iterator[Token]:
         ...
 
+    def next_token(self, lex_state: Any, parser_state: Any = None) -> Token:
+        ...
 
 class ContextualLexer(Lexer):
     lexers: Dict[str, TraditionalLexer]
@@ -135,6 +153,7 @@ class ContextualLexer(Lexer):
         self,
         terminals: Collection[TerminalDef],
         states: Dict[str, Collection[str]],
+        re_: ModuleType,
         ignore: Collection[str] = ...,
         always_accept: Collection[str] = ...,
         user_callbacks: Dict[str, _Callback] = ...,

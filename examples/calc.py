@@ -1,7 +1,11 @@
-#
-# This example shows how to write a basic calculator with variables.
-#
+"""
+Basic calculator
+================
 
+A simple example of a REPL calculator
+
+This example shows how to write a basic calculator with variables.
+"""
 from lark import Lark, Transformer, v_args
 
 
@@ -49,7 +53,10 @@ class CalculateTree(Transformer):
         return value
 
     def var(self, name):
-        return self.vars[name]
+        try:
+            return self.vars[name]
+        except KeyError:
+            raise Exception("Variable not found: %s" % name)
 
 
 calc_parser = Lark(calc_grammar, parser='lalr', transformer=CalculateTree())

@@ -1,7 +1,7 @@
-
+# Parsers
 Lark implements the following parsing algorithms: Earley, LALR(1), and CYK
 
-# Earley
+## Earley
 
 An [Earley Parser](https://www.wikiwand.com/en/Earley_parser) is a chart parser capable of parsing any context-free grammar at O(n^3), and O(n^2) when the grammar is unambiguous. It can parse most LR grammars at O(n). Most programming languages are LR, and can be parsed at a linear time.
 
@@ -13,7 +13,7 @@ It's possible to bypass the dynamic lexing, and use the regular Earley parser wi
 
 Lark implements the Shared Packed Parse Forest data-structure for the Earley parser, in order to reduce the space and computation required to handle ambiguous grammars.
 
-You can read more about SPPF [here](http://www.bramvandersanden.com/post/2014/06/shared-packed-parse-forest/)
+You can read more about SPPF [here](https://web.archive.org/web/20191229100607/www.bramvandersanden.com/post/2014/06/shared-packed-parse-forest)
 
 As a result, Lark can efficiently parse and store every ambiguity in the grammar, when using Earley.
 
@@ -23,14 +23,22 @@ Lark provides the following options to combat ambiguity:
 
 2) Users may choose to receive the set of all possible parse-trees (using ambiguity='explicit'), and choose the best derivation themselves. While simple and flexible, it comes at the cost of space and performance, and so it isn't recommended for highly ambiguous grammars, or very long inputs.
 
-3) As an advanced feature, users may use specialized visitors to iterate the SPPF themselves. Future versions of Lark intend to improve and simplify this interface.
+3) As an advanced feature, users may use specialized visitors to iterate the SPPF themselves.
+
+**lexer="dynamic_complete"**
+
+Earley's "dynamic" lexer uses regular expressions in order to tokenize the text. It tries every possible combination of terminals, but it matches each terminal exactly once, returning the longest possible match.
+
+That means, for example, that when `lexer="dynamic"` (which is the default), the terminal `/a+/`, when given the text `"aa"`, will return one result, `aa`, even though `a` would also be correct.
+
+This behavior was chosen because it is much faster, and it is usually what you would expect.
+
+Setting `lexer="dynamic_complete"` instructs the lexer to consider every possible regexp match. This ensures that the parser will consider and resolve every ambiguity, even inside the terminals themselves. This lexer provides the same capabilities as scannerless Earley, but with different performance tradeoffs.
+
+Warning: This lexer can be much slower, especially for open-ended terminals such as `/.*/`
 
 
-**dynamic_complete**
-
-**TODO: Add documentation on dynamic_complete**
-
-# LALR(1)
+## LALR(1)
 
 [LALR(1)](https://www.wikiwand.com/en/LALR_parser) is a very efficient, true-and-tested parsing algorithm. It's incredibly fast and requires very little memory. It can parse most programming languages (For example: Python and Java).
 
@@ -38,11 +46,13 @@ Lark comes with an efficient implementation that outperforms every other parsing
 
 Lark extends the traditional YACC-based architecture with a *contextual lexer*, which automatically provides feedback from the parser to the lexer, making the LALR(1) algorithm stronger than ever.
 
-The contextual lexer communicates with the parser, and uses the parser's lookahead prediction to narrow its choice of tokens. So at each point, the lexer only matches the subgroup of terminals that are legal at that parser state, instead of all of the terminals. It’s surprisingly effective at resolving common terminal collisions, and allows to parse languages that LALR(1) was previously incapable of parsing.
+The contextual lexer communicates with the parser, and uses the parser's lookahead prediction to narrow its choice of terminals. So at each point, the lexer only matches the subgroup of terminals that are legal at that parser state, instead of all of the terminals. It’s surprisingly effective at resolving common terminal collisions, and allows one to parse languages that LALR(1) was previously incapable of parsing.
+
+(If you're familiar with YACC, you can think of it as automatic lexer-states)
 
 This is an improvement to LALR(1) that is unique to Lark.
 
-# CYK Parser
+## CYK Parser
 
 A [CYK parser](https://www.wikiwand.com/en/CYK_algorithm) can parse any context-free grammar at O(n^3*|G|).
 

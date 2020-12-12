@@ -1,18 +1,18 @@
-# Lark - a modern parsing library for Python
+# Lark - a parsing toolkit for Python
 
-Lark is a parser built with a focus on ergonomics, performance and resilience.
+Lark is a parsing toolkit for Python, built with a focus on ergonomics, performance and modularity.
 
-Lark can parse all context-free languages. That means it is capable of parsing almost any programming language out there, and to some degree most natural languages too.
+Lark can parse all context-free languages. To put it simply, it means that it is capable of parsing almost any programming language out there, and to some degree most natural languages too.
 
 **Who is it for?**
 
-   - **Beginners**: Lark is very friendly for experimentation. It can parse any grammar you throw at it, no matter how complicated or ambiguous, and do so efficiently. It also constructs an annotated parse-tree for you, using only the grammar, and it gives you convienient and flexible tools to process that parse-tree.
+   - **Beginners**: Lark is very friendly for experimentation. It can parse any grammar you throw at it, no matter how complicated or ambiguous, and do so efficiently. It also constructs an annotated parse-tree for you, using only the grammar and an input, and it gives you convienient and flexible tools to process that parse-tree.
 
    - **Experts**: Lark implements both Earley(SPPF) and LALR(1), and several different lexers, so you can trade-off power and speed, according to your requirements. It also provides a variety of sophisticated features and utilities.
 
 **What can it do?**
 
- - Parse all context-free grammars, and handle any ambiguity
+ - Parse all context-free grammars, and handle any ambiguity gracefully
  - Build an annotated parse-tree automagically, no construction code required.
  - Provide first-rate performance in terms of both Big-O complexity and measured run-time (considering that this is Python ;)
  - Run on every Python interpreter (it's pure-python)
@@ -25,7 +25,7 @@ Most importantly, Lark will save you time and prevent you from getting parsing h
 ### Quick links
 
 - [Documentation @readthedocs](https://lark-parser.readthedocs.io/)
-- [Cheatsheet (PDF)](/docs/lark_cheatsheet.pdf)
+- [Cheatsheet (PDF)](/docs/_static/lark_cheatsheet.pdf)
 - [Online IDE (very basic)](https://lark-parser.github.io/lark/ide/app.html)
 - [Tutorial](/docs/json_tutorial.md) for writing a JSON parser.
 - Blog post: [How to write a DSL with Lark](http://blog.erezsh.com/how-to-write-a-dsl-in-python-with-lark/)
@@ -33,7 +33,7 @@ Most importantly, Lark will save you time and prevent you from getting parsing h
 
 ### Install Lark
 
-    $ pip install lark-parser
+    $ pip install lark-parser --upgrade
 
 Lark has no dependencies.
 
@@ -46,6 +46,8 @@ Lark provides syntax highlighting for its grammar files (\*.lark):
 - [Sublime Text & TextMate](https://github.com/lark-parser/lark_syntax)
 - [vscode](https://github.com/lark-parser/vscode-lark)
 - [Intellij & PyCharm](https://github.com/lark-parser/intellij-syntax-highlighting)
+- [Vim](https://github.com/lark-parser/vim-lark-syntax)
+- [Atom](https://github.com/Alhadis/language-grammars)
 
 ### Clones
 
@@ -77,12 +79,11 @@ Notice punctuation doesn't appear in the resulting tree. It's automatically filt
 
 ### Fruit flies like bananas
 
-Lark is great at handling ambiguity. Let's parse the phrase "fruit flies like bananas":
+Lark is great at handling ambiguity. Here is the result of parsing the phrase "fruit flies like bananas":
 
 ![fruitflies.png](examples/fruitflies.png)
 
-See more [examples here](https://github.com/lark-parser/lark/tree/master/examples)
-
+[Read the code here](https://github.com/lark-parser/lark/tree/master/examples/fruitflies.py), and [more examples here](https://github.com/lark-parser/lark/tree/master/examples)
 
 
 ## List of main features
@@ -100,12 +101,12 @@ See more [examples here](https://github.com/lark-parser/lark/tree/master/example
  - **Python 2 & 3** compatible
  - Automatic line & column tracking
  - Standard library of terminals (strings, numbers, names, etc.)
- - Import grammars from Nearley.js
+ - Import grammars from Nearley.js ([read more](/docs/nearley.md))
  - Extensive test suite [![codecov](https://codecov.io/gh/erezsh/lark/branch/master/graph/badge.svg)](https://codecov.io/gh/erezsh/lark)
  - MyPy support using type stubs
  - And much more!
 
-See the full list of [features here](https://lark-parser.readthedocs.io/en/latest/features/)
+See the full list of [features here](https://lark-parser.readthedocs.io/en/latest/features.html)
 
 
 ### Comparison to other libraries
@@ -114,9 +115,9 @@ See the full list of [features here](https://lark-parser.readthedocs.io/en/lates
 
 Lark is the fastest and lightest (lower is better)
 
-![Run-time Comparison](docs/comparison_runtime.png)
+![Run-time Comparison](docs/_static/comparison_runtime.png)
 
-![Memory Usage Comparison](docs/comparison_memory.png)
+![Memory Usage Comparison](docs/_static/comparison_memory.png)
 
 
 Check out the [JSON tutorial](/docs/json_tutorial.md#conclusion) for more details on how the comparison was made.
@@ -131,7 +132,7 @@ Check out the [JSON tutorial](/docs/json_tutorial.md#conclusion) for more detail
 |:--------|:----------|:----|:--------|:------------|:------------|:----------|:----------
 | **Lark** | Earley/LALR(1) | EBNF | Yes! | Yes! | Yes! | Yes! | Yes! (LALR only) |
 | [PLY](http://www.dabeaz.com/ply/) | LALR(1) | BNF | No | No | No | No | No |
-| [PyParsing](http://pyparsing.wikispaces.com/) | PEG | Combinators | No | No | No\* | No | No |
+| [PyParsing](https://github.com/pyparsing/pyparsing) | PEG | Combinators | No | No | No\* | No | No |
 | [Parsley](https://pypi.python.org/pypi/Parsley) | PEG | EBNF | No | No | No\* | No | No |
 | [Parsimonious](https://github.com/erikrose/parsimonious) | PEG | EBNF | Yes | No | No\* | No | No |
 | [ANTLR](https://github.com/antlr/antlr4) | LL(*) | EBNF | Yes | No | Yes? | Yes | No |
@@ -156,27 +157,9 @@ Check out the [JSON tutorial](/docs/json_tutorial.md#conclusion) for more detail
  - [miniwdl](https://github.com/chanzuckerberg/miniwdl) - A static analysis toolkit for the Workflow Description Language
  - [pytreeview](https://gitlab.com/parmenti/pytreeview) - a lightweight tree-based grammar explorer
  - [harmalysis](https://github.com/napulen/harmalysis) - A language for harmonic analysis and music theory
+ - [gersemi](https://github.com/BlankSpruce/gersemi) - A CMake code formatter
 
 Using Lark? Send me a message and I'll add your project!
-
-### How to use Nearley grammars in Lark
-
-Lark comes with a tool to convert grammars from [Nearley](https://github.com/Hardmath123/nearley), a popular Earley library for Javascript. It uses [Js2Py](https://github.com/PiotrDabkowski/Js2Py) to convert and run the Javascript postprocessing code segments.
-
-Here's an example:
-```bash
-git clone https://github.com/Hardmath123/nearley
-python -m lark.tools.nearley nearley/examples/calculator/arithmetic.ne main nearley > ncalc.py
-```
-
-You can use the output as a regular python module:
-
-```python
->>> import ncalc
->>> ncalc.parse('sin(pi/4) ^ e')
-0.38981434460254655
-```
-
 
 ## License
 

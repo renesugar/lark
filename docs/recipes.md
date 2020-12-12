@@ -81,7 +81,7 @@ Prints out:
 
 ## CollapseAmbiguities
 
-Parsing ambiguous texts with earley and `ambiguity='explicit'` produces a single tree with `_ambig` nodes to mark where the ambiguity occured.
+Parsing ambiguous texts with earley and `ambiguity='explicit'` produces a single tree with `_ambig` nodes to mark where the ambiguity occurred.
 
 However, it's sometimes more convenient instead to work with a list of all possible unambiguous trees.
 
@@ -139,7 +139,7 @@ If your tree nodes aren't unique (if there is a shared Tree instance), the asser
 
 ```python
 class Parent(Visitor):
-    def visit(self, tree):
+    def __default__(self, tree):
         for subtree in tree.children:
             if isinstance(subtree, Tree):
                 assert not hasattr(subtree, 'parent')
